@@ -1,0 +1,119 @@
+services:
+  mongo:
+    image: mongo:latest
+    container_name: dev-mongo
+    mem_limit: 768m
+    memswap_limit: 1g
+    command: mongod --replSet rs0 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: >
+        mongosh --eval "
+        try {
+          rs.status().ok
+        } catch (e) {
+          rs.initiate({
+            _id: 'rs0',
+            members: [
+              { _id: 0, host: 'mongo:27017' }
+            ]
+          }).ok
+        }"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: dev-rabbitmq
+    mem_limit: 512m
+    memswap_limit: 768m
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: dev
+      RABBITMQ_DEFAULT_PASS: dev
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: dev-mssql
+    mem_limit: 2g
+    memswap_limit: 3g
+    ports:
+      - "1433:1433"
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Qwerty123456!"
+      MSSQL_PID: "Developer"
+      MSSQL_MEMORY_LIMIT_MB: 1536
+    volumes:
+      - mssql_data:/var/opt/mssql
+    healthcheck:
+      test: >
+        /opt/mssql-tools18/bin/sqlcmd
+        -S localhost
+        -U sa
+        -P "Qwerty123456!"
+        -C
+        -Q "SELECT 1"
+        || exit 1
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+    restart: unless-stopped
+
+  redis:
+    image: redis:8
+    container_name: dev-redis
+    mem_limit: 256m
+    memswap_limit: 384m
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: dev-redis-insight
+    mem_limit: 512m
+    memswap_limit: 768m
+    ports:
+      - "5540:5540"
+    volumes:
+      - redis_insight_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  rabbitmq_data:
+  mssql_data:
+  redis_data:
+  redis_insight_data:
